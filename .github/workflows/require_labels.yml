@@ -1,0 +1,28 @@
+name: Require PR Labels
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled]
+
+jobs:
+  check-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const labels = pullRequest.labels.map(label => label.name);
+            
+            if (labels.length === 0) {
+              core.setFailed('Pull request must have at least one label for release notes generation.');
+              return;
+            }
+
+            console.log(`PR has labels: ${labels.join(', ')}`);
