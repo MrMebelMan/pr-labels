@@ -22,6 +22,10 @@ jobs:
               pull_number: context.issue.number,
             });
 
+            // Get current labels
+            const currentLabels = pullRequest.labels.map(label => label.name);
+            console.log(`Current labels: ${currentLabels.join(', ') || 'none'}`);
+
             // Get list of changed files
             const { data: files } = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
@@ -41,41 +45,51 @@ jobs:
                 file.includes('copilot-instructions') ||
                 file.includes('README')
             )) {
-              labelsToAdd.push('documentation');
+              if (!currentLabels.includes('documentation')) {
+                labelsToAdd.push('documentation');
+              }
             }
             
             // Workflow changes
             if (changedFiles.some(file => file.includes('.github/workflows'))) {
-              labelsToAdd.push('enhancement');
+              if (!currentLabels.includes('enhancement')) {
+                labelsToAdd.push('enhancement');
+              }
             }
             
-            // Add labels if any were identified
-            for (const label of labelsToAdd) {
+            // Add labels if any were identified and not already present
+            let labelsAdded = false;
+            if (labelsToAdd.length > 0) {
               try {
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
-                  labels: [label]
+                  labels: labelsToAdd
                 });
-                console.log(`Added label: ${label}`);
+                console.log(`Added labels: ${labelsToAdd.join(', ')}`);
+                labelsAdded = true;
               } catch (error) {
-                console.log(`Failed to add label ${label}: ${error.message}`);
+                console.log(`Failed to add labels: ${error.message}`);
               }
             }
 
-            // Re-fetch PR to get updated labels
-            const { data: updatedPR } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
-
-            const labels = updatedPR.labels.map(label => label.name);
+            // Get final labels (either current labels or updated ones)
+            let finalLabels = currentLabels;
+            if (labelsAdded) {
+              // Wait a moment for API consistency and re-fetch labels
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const { data: updatedPR } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              finalLabels = updatedPR.labels.map(label => label.name);
+            }
             
-            if (labels.length === 0) {
+            if (finalLabels.length === 0) {
               core.setFailed('Pull request must have at least one label for release notes generation.');
               return;
             }
 
-            console.log(`PR has labels: ${labels.join(', ')}`);
+            console.log(`Final PR labels: ${finalLabels.join(', ')}`);
